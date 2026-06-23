@@ -1,0 +1,8 @@
+# Helm templates are Go templates — Prettier mangles {{ }} into { { } }.
+helm/
+
+# generated / vendored
+dist/
+coverage/
+node_modules/
+prisma/migrations/

@@ -1,0 +1,18 @@
+# Development image: full deps + hot reload. Mount the source as a volume:
+#   docker build -f Dockerfile.dev -t fb-upflow-dev .
+#   docker run --rm -it -p 3000:3000 --env-file .env -v "$PWD":/app -v /app/node_modules fb-upflow-dev
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache openssl
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+RUN npx prisma generate
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start:dev"]

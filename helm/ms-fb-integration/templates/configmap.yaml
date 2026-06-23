@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ms-fb-integration.tms.fullname" . }}-config
+  labels:
+    {{- include "ms-fb-integration.tms.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.service.port | quote }}
+  HTTPS_ENABLED: {{ .Values.config.httpsEnabled | quote }}
+  PUBLIC_BASE_URL: {{ printf "https://%s" .Values.host | quote }}
+  FRESHBOOKS_REDIRECT_URI: {{ printf "https://%s/auth/freshbooks/callback" .Values.host | quote }}
+  FRESHBOOKS_API_BASE: {{ .Values.config.freshbooksApiBase | quote }}
+  FRESHBOOKS_AUTH_BASE: {{ .Values.config.freshbooksAuthBase | quote }}
+  FRESHBOOKS_SCOPES: {{ .Values.config.freshbooksScopes | quote }}
+  UPFLOW_API_BASE: {{ .Values.config.upflowApiBase | quote }}
+  WEBHOOK_VERIFY_SIGNATURE: {{ .Values.config.webhookVerifySignature | quote }}
+  SYNC_CRON_ENABLED: {{ .Values.config.syncCronEnabled | quote }}
+  SYNC_CRON_EXPRESSION: {{ .Values.config.syncCronExpression | quote }}
+  SYNC_CONCURRENCY: {{ .Values.config.syncConcurrency | quote }}
+  FRESHBOOKS_CLIENT_ID: {{ .Values.config.freshbooksClientId | quote }}
+  FRESHBOOKS_CLIENT_SECRET: {{ .Values.config.freshbooksClientSecret | quote }}
+  UPFLOW_API_KEY: {{ .Values.config.upflowApiKey | quote }}
+  UPFLOW_API_SECRET: {{ .Values.config.upflowApiSecret | quote }}

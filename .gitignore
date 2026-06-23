@@ -9,6 +9,10 @@ coverage/
 .env
 .env.local
 
+# helm secret overrides (injected at deploy, never committed)
+values-secret.yaml
+**/values-secret.yaml
+
 # local TLS certs (self-signed, dev only)
 certs/
 

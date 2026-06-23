@@ -1,0 +1,30 @@
+# deps / build artifacts (reinstalled/rebuilt in the image)
+node_modules
+dist
+coverage
+
+# secrets — must NEVER end up in an image layer
+.env
+.env.*
+certs/
+**/values-secret.yaml
+
+# local db
+*.db
+*.db-journal
+
+# vcs / ci / editor / docs — not needed to build
+.git
+.github
+.vscode
+.idea
+helm
+*.md
+
+# misc
+npm-debug.log*
+.DS_Store
+Dockerfile
+Dockerfile.dev
+.dockerignore
+docker-compose.yml

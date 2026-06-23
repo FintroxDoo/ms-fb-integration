@@ -1,0 +1,87 @@
+host: 'APP_HOST'
+
+replicaCount: 1
+
+image:
+  repository: registry.digitalocean.com/superego/ms-fb-integration
+  pullPolicy: IfNotPresent
+  # CI overrides via --set image.tag=$BUILD_VER
+  tag: 'latest'
+
+imagePullSecrets:
+  - name: 'superego'
+
+nameOverride: ''
+fullnameOverride: ''
+
+# Default k8s ServiceAccount is fine — no chart-managed SA.
+serviceAccount:
+  create: false
+  name: ''
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext: {}
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: false # flip to true once host + DNS + TLS are ready
+  className: 'nginx'
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/proxy-body-size: '10m'
+  tlsSecretName: 'fb-upflow-tls'
+
+resources:
+  limits:
+    cpu: 300m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 15
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 15
+
+# Non-secret app config → ConfigMap. (PORT/PUBLIC_BASE_URL/REDIRECT_URI are
+# derived from `host` + `service.port` in the configmap template.)
+config:
+  httpsEnabled: 'false' # TLS terminated at the ingress
+  freshbooksApiBase: 'https://api.freshbooks.com'
+  freshbooksAuthBase: 'https://auth.freshbooks.com'
+  freshbooksScopes: 'user:profile:read user:invoices:read user:clients:read'
+  upflowApiBase: 'https://api.sandbox.upflow.io/v1'
+  webhookVerifySignature: 'true'
+  syncCronEnabled: 'false'
+  syncCronExpression: '*/15 * * * *'
+  syncConcurrency: '5'
+  freshbooksClientId: 'e5643804e43cfb6966b5084ad5bb4a732abb9193e241144da2fa4b7a884ed1ef'
+  freshbooksClientSecret: 'c3297e256d590cbcdc57ebaa916c90c454e962d8b578f17d54ea39cd80370d89'
+  upflowApiKey: '3a3680d2b5129855f39d0713579d5b4610abe7e7f42176384699e55a4668fa77'
+  upflowApiSecret: '27518758b2a651e04566a66f6f2da6c6368d1b284bd2cbf3247f34dcfc5ca849'
+
+# Database (kept as credentials, not a URL — chart assembles DATABASE_URL for
+# Prisma). Password injected at deploy, NOT committed.
+postgresql:
+  host: 'superego-staging-do-user-8345581-0.l.db.ondigitalocean.com'
+  servicePort: '25060'
+  sslmode: 'require'
+  auth:
+    username: 'doadmin'
+    database: 'freshbooks_upflow'
+    password: '' # inject via --set postgresql.auth.password=... or values-secret.yaml
+
+# Extra raw env appended to the container (optional).
+env:
+  - name: NODE_OPTIONS
+    value: '--max-old-space-size=384'

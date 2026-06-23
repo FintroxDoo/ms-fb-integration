@@ -1,0 +1,7 @@
+name: 'Build Version'
+description: 'Uses git describe to retrieve version'
+runs:
+  using: 'composite'
+  steps:
+    - run: ./.github/actions/build-version/build-version.sh
+      shell: bash
