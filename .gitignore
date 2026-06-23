@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+coverage/
+
+# env / secrets
+.env
+.env.local
+
+# local TLS certs (self-signed, dev only)
+certs/
+
+# prisma local db
+*.db
+*.db-journal
+prisma/dev.db
+prisma/*.db
+
+# logs
+*.log
+npm-debug.log*
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

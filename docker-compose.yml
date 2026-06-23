@@ -1,0 +1,24 @@
+# Local Postgres for development (matches the managed Postgres used in staging).
+# Start: docker compose up -d   |   Stop: docker compose down
+# Data persists in the named volume; `docker compose down -v` wipes it.
+services:
+  postgres:
+    image: postgres:16
+    container_name: fb-upflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: freshbooks_upflow
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d freshbooks_upflow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

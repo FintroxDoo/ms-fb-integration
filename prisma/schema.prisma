@@ -1,0 +1,64 @@
+// Prisma schema — Postgres store for OAuth tokens + sync state.
+// Local dev runs Postgres via docker-compose; staging uses managed Postgres.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Stores FreshBooks OAuth tokens (one row per provider).
+model OAuthToken {
+  id           Int      @id @default(autoincrement())
+  provider     String   @unique // e.g. "freshbooks"
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  accountId    String? // FreshBooks account_id resolved from /me
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Maps a FreshBooks client -> UpFlow customer.
+model CustomerSync {
+  id               Int      @id @default(autoincrement())
+  fbClientId       String   @unique
+  upflowCustomerId String?
+  status           String   @default("pending") // pending | ok | error
+  error            String?
+  lastSyncedAt     DateTime @default(now()) @updatedAt
+}
+
+// Maps a FreshBooks invoice -> UpFlow invoice.
+model InvoiceSync {
+  id              Int      @id @default(autoincrement())
+  fbInvoiceId     String   @unique
+  upflowInvoiceId String?
+  status          String   @default("pending") // pending | ok | error
+  error           String?
+  lastSyncedAt    DateTime @default(now()) @updatedAt
+}
+
+// Generic key/value cursors, e.g. invoices.updated_min watermark.
+model SyncCursor {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Registered FreshBooks webhook callbacks. `verifier` doubles as the HMAC key
+// used to authenticate incoming event payloads.
+model WebhookCallback {
+  id         Int      @id @default(autoincrement())
+  callbackId Int      @unique // FreshBooks callbackid
+  event      String // e.g. "invoice.create"
+  uri        String
+  verifier   String? // set after the verification handshake
+  verified   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
