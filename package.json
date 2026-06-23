@@ -18,8 +18,9 @@
     "typecheck": "tsc --noEmit",
     "check": "npm run test && npm run lint && npm run typecheck",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:migrate": "DATABASE_URL=\"$(node -r dotenv/config scripts/build-db-url.js)\" prisma migrate dev",
+    "prisma:deploy": "DATABASE_URL=\"$(node -r dotenv/config scripts/build-db-url.js)\" prisma migrate deploy",
+    "prisma:studio": "DATABASE_URL=\"$(node -r dotenv/config scripts/build-db-url.js)\" prisma studio"
   },
   "dependencies": {
     "@nestjs/axios": "^3.1.3",

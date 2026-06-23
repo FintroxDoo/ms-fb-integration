@@ -17,7 +17,9 @@ data:
   SYNC_CRON_ENABLED: {{ .Values.config.syncCronEnabled | quote }}
   SYNC_CRON_EXPRESSION: {{ .Values.config.syncCronExpression | quote }}
   SYNC_CONCURRENCY: {{ .Values.config.syncConcurrency | quote }}
-  FRESHBOOKS_CLIENT_ID: {{ .Values.config.freshbooksClientId | quote }}
-  FRESHBOOKS_CLIENT_SECRET: {{ .Values.config.freshbooksClientSecret | quote }}
-  UPFLOW_API_KEY: {{ .Values.config.upflowApiKey | quote }}
-  UPFLOW_API_SECRET: {{ .Values.config.upflowApiSecret | quote }}
+  # Database credentials (non-secret parts). PGPASSWORD is in the Secret.
+  PGHOST: {{ .Values.postgresql.host | quote }}
+  PGPORT: {{ .Values.postgresql.servicePort | quote }}
+  PGUSER: {{ .Values.postgresql.auth.username | quote }}
+  PGDATABASE: {{ .Values.postgresql.auth.database | quote }}
+  PGSSLMODE: {{ .Values.postgresql.sslmode | quote }}

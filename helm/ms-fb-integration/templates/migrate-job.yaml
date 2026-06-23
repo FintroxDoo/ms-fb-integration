@@ -26,8 +26,15 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           # Requires the image to contain the Prisma CLI + prisma/ (schema +
-          # migrations). See Dockerfile.
-          command: ['npx', 'prisma', 'migrate', 'deploy']
+          # migrations). DATABASE_URL is assembled inline from PG* env.
+          command:
+            - sh
+            - -c
+            - >-
+              DATABASE_URL="postgresql://$PGUSER:$PGPASSWORD@$PGHOST:$PGPORT/$PGDATABASE?sslmode=$PGSSLMODE"
+              npx prisma migrate deploy
           envFrom:
+            - configMapRef:
+                name: {{ include "ms-fb-integration.tms.fullname" . }}-config
             - secretRef:
                 name: {{ include "ms-fb-integration.tms.fullname" . }}-secret

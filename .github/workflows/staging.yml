@@ -42,11 +42,6 @@ jobs:
     name: 'Deploy to Kubernetes (staging)'
     runs-on: ubuntu-latest
     needs: build_and_push_image
-    strategy:
-      matrix:
-        include:
-          - namespace: staging
-            kubeconfig: DO_TMS_STAGING
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -54,19 +49,25 @@ jobs:
       - name: Create Build Version
         uses: ./.github/actions/build-version
 
-      - name: Prepare Helm values
-        run: helm package ms-fb-integration
+      - name: Install Helm
+        uses: azure/setup-helm@v4
 
-      - name: Create .kube directory
-        run: mkdir -p $HOME/.kube
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN_SUPEREGO }}
 
-      - name: Setup Kubeconfig
-        run: echo "${{ secrets[matrix.kubeconfig] }}" > $HOME/.kube/config
+      - name: Fetch kubeconfig from DigitalOcean
+        run: doctl kubernetes cluster kubeconfig save ${{ vars.DO_CLUSTER_NAME }}
 
-      - name: Deploy to Kubernetes (ms-fb-integration-staging)
+      - name: Deploy to Kubernetes
         run: |
-          if [ "${{ matrix.namespace }}" = "master" ]; then
-            helm upgrade --install --debug --atomic --cleanup-on-fail ms-fb-integration ./helm/ms-fb-integration --namespace ${{ matrix.namespace }}
-          else
-            helm upgrade --install --debug --atomic --cleanup-on-fail ms-fb-integration ./helm/ms-fb-integration --namespace ${{ matrix.namespace }}
-          fi
+          helm upgrade --install --debug --atomic --cleanup-on-fail \
+            ms-fb-integration ./helm/ms-fb-integration \
+            --namespace freshbooks-upflow --create-namespace \
+            --set image.tag=${{ env.BUILD_VER }} \
+            --set postgresql.auth.password='${{ secrets.PG_PASSWORD }}' \
+            --set secrets.freshbooksClientId='${{ secrets.FRESHBOOKS_CLIENT_ID }}' \
+            --set secrets.freshbooksClientSecret='${{ secrets.FRESHBOOKS_CLIENT_SECRET }}' \
+            --set secrets.upflowApiKey='${{ secrets.UPFLOW_API_KEY }}' \
+            --set secrets.upflowApiSecret='${{ secrets.UPFLOW_API_SECRET }}'

@@ -3,7 +3,15 @@ import { z } from 'zod';
 // Validate + shape process.env into a typed config tree.
 const envSchema = z.object({
   PORT: z.coerce.number().default(3000),
-  DATABASE_URL: z.string().min(1),
+
+  // Postgres connection — credentials only (no DATABASE_URL). The URL is
+  // assembled internally for Prisma.
+  PGHOST: z.string().min(1),
+  PGPORT: z.coerce.number().default(5432),
+  PGUSER: z.string().min(1),
+  PGPASSWORD: z.string().min(1),
+  PGDATABASE: z.string().min(1),
+  PGSSLMODE: z.string().default('prefer'),
 
   FRESHBOOKS_CLIENT_ID: z.string().min(1),
   FRESHBOOKS_CLIENT_SECRET: z.string().min(1),
@@ -48,7 +56,15 @@ export type Env = z.infer<typeof envSchema>;
 
 export interface AppConfig {
   port: number;
-  databaseUrl: string;
+  database: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    name: string;
+    sslmode: string;
+    url: string; // assembled for Prisma; never set directly
+  };
   freshbooks: {
     clientId: string;
     clientSecret: string;
@@ -93,9 +109,20 @@ export function validateEnv(raw: Record<string, unknown>): Env {
 // Used by @nestjs/config `load` to expose a typed nested config tree.
 export function configuration(): AppConfig {
   const env = validateEnv(process.env);
+  const dbUrl =
+    `postgresql://${env.PGUSER}:${encodeURIComponent(env.PGPASSWORD)}` +
+    `@${env.PGHOST}:${env.PGPORT}/${env.PGDATABASE}?sslmode=${env.PGSSLMODE}`;
   return {
     port: env.PORT,
-    databaseUrl: env.DATABASE_URL,
+    database: {
+      host: env.PGHOST,
+      port: env.PGPORT,
+      user: env.PGUSER,
+      password: env.PGPASSWORD,
+      name: env.PGDATABASE,
+      sslmode: env.PGSSLMODE,
+      url: dbUrl,
+    },
     freshbooks: {
       clientId: env.FRESHBOOKS_CLIENT_ID,
       clientSecret: env.FRESHBOOKS_CLIENT_SECRET,

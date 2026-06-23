@@ -7,6 +7,9 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // The app builds the URL from PG* credentials at runtime (PrismaService).
+  // The Prisma CLI gets DATABASE_URL transiently from the prisma:* npm scripts
+  // (scripts/build-db-url.js) — never set DATABASE_URL by hand.
   url      = env("DATABASE_URL")
 }
 
