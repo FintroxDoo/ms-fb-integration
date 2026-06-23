@@ -23,6 +23,7 @@ export interface SyncCounts {
   ok: number;
   failed: number;
 }
+// dummy commit
 
 export interface SyncResult {
   customers: SyncCounts;
