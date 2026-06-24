@@ -52,13 +52,11 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Install doctl
-        uses: digitalocean/action-doctl@v2
-        with:
-          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN_SUPEREGO }}
+      - name: Create .kube directory
+        run: mkdir -p $HOME/.kube
 
-      - name: Fetch kubeconfig from DigitalOcean
-        run: doctl kubernetes cluster kubeconfig save ${{ vars.DO_CLUSTER_NAME }}
+      - name: Setup Kubeconfig
+        run: echo "${{ secrets.DO_TMS_STAGING }}" > $HOME/.kube/config
 
       - name: Deploy to Kubernetes
         run: |
