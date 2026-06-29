@@ -70,7 +70,7 @@ jobs:
           sed -i -e "s/^\([[:space:]]*tag:[[:space:]]*\).*/\1\"${{ env.GITHUB_REF_NAME_SLUG_URL }}-${{ env.BUILD_VER }}\"/" helm/ms-fb-integration/values.yaml
           sed -i -e "s/^version: .*/version: \"${{ env.HELM_VER }}\"/" helm/ms-fb-integration/Chart.yaml
           sed -i -e "s/^appVersion: .*/appVersion: \"${{ env.BUILD_VER }}\"/" helm/ms-fb-integration/Chart.yaml
-          sed -i -e "s/APP_HOST/${{ env.GITHUB_REF_NAME_SLUG_URL }}.vrlz.app/g" helm/ms-fb-integration/values.yaml
+          sed -i -e "s/APP_HOST/ms-fb-int-staging.vrlz.app/g" helm/ms-fb-integration/values.yaml
 
       - name: Deploy to Kubernetes
         run: |

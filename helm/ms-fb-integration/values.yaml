@@ -29,7 +29,7 @@ service:
   port: 3000
 
 ingress:
-  enabled: false # flip to true once host + DNS + TLS are ready
+  enabled: true
   className: 'nginx'
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
