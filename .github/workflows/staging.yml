@@ -1,23 +1,26 @@
-name: 'Staging Deploy - FreshBooks UpFlow Integration'
+name: 'Staging Build - FreshBooks UpFlow Integration'
 
 on:
   push:
     branches:
-      - main
-
-env:
-  REGISTRY: registry.digitalocean.com/superego
+      - staging
 
 jobs:
   build_and_push_image:
-    name: 'Build and Push Docker image'
+    name: 'Build and Push Docker Image'
     runs-on: ubuntu-latest
+    env:
+      REGISTRY: registry.digitalocean.com/superego
+      CACHE_TAG: cache
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Create Build Version
         uses: ./.github/actions/build-version
+
+      - name: Inject slug/short variables
+        uses: rlespinasse/github-slug-action@v4
 
       - name: Log in to DigitalOcean Container Registry
         uses: docker/login-action@v3
@@ -28,15 +31,19 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
 
-      - name: Build, tag and Push Docker image to DigitalOcean Container Registry
+      - name: Build and push Docker image
         run: |
-          docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG .
-          docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
-        env:
-          REGISTRY: registry.digitalocean.com/superego
-          REPOSITORY: ms-fb-integration
-          IMAGE_TAG: ${{ env.BUILD_VER }}
+          docker buildx build \
+            --cache-from=type=registry,ref=${{ env.REGISTRY }}/ms-fb-integration:${{ env.CACHE_TAG }} \
+            --cache-to=type=registry,ref=${{ env.REGISTRY }}/ms-fb-integration:${{ env.CACHE_TAG }},mode=max \
+            --tag ${{ env.REGISTRY }}/ms-fb-integration:${{ env.GITHUB_REF_NAME_SLUG_URL }}-${{ env.BUILD_VER }} \
+            --push .
+
+      - name: Clean up Docker context
+        run: docker buildx rm builder || true
 
   deploy_to_kubernetes:
     name: 'Deploy to Kubernetes (staging)'
@@ -49,8 +56,8 @@ jobs:
       - name: Create Build Version
         uses: ./.github/actions/build-version
 
-      - name: Install Helm
-        uses: azure/setup-helm@v4
+      - name: Inject slug/short variables
+        uses: rlespinasse/github-slug-action@v4
 
       - name: Create .kube directory
         run: mkdir -p $HOME/.kube
@@ -58,14 +65,19 @@ jobs:
       - name: Setup Kubeconfig
         run: echo "${{ secrets.DO_TMS_STAGING }}" > $HOME/.kube/config
 
+      - name: Prepare Helm Chart ms-fb-integration
+        run: |
+          sed -i -e "s/^\([[:space:]]*tag:[[:space:]]*\).*/\1\"${{ env.GITHUB_REF_NAME_SLUG_URL }}-${{ env.BUILD_VER }}\"/" helm/ms-fb-integration/values.yaml
+          sed -i -e "s/^version: .*/version: \"${{ env.HELM_VER }}\"/" helm/ms-fb-integration/Chart.yaml
+          sed -i -e "s/^appVersion: .*/appVersion: \"${{ env.BUILD_VER }}\"/" helm/ms-fb-integration/Chart.yaml
+          sed -i -e "s/APP_HOST/${{ env.GITHUB_REF_NAME_SLUG_URL }}.vrlz.app/g" helm/ms-fb-integration/values.yaml
+
       - name: Deploy to Kubernetes
         run: |
-          helm upgrade --install --debug --atomic --cleanup-on-fail \
-            ms-fb-integration ./helm/ms-fb-integration \
-            --namespace freshbooks-upflow --create-namespace \
-            --set image.tag=${{ env.BUILD_VER }} \
-            --set postgresql.auth.password='${{ secrets.PG_PASSWORD }}' \
-            --set secrets.freshbooksClientId='${{ secrets.FRESHBOOKS_CLIENT_ID }}' \
-            --set secrets.freshbooksClientSecret='${{ secrets.FRESHBOOKS_CLIENT_SECRET }}' \
-            --set secrets.upflowApiKey='${{ secrets.UPFLOW_API_KEY }}' \
-            --set secrets.upflowApiSecret='${{ secrets.UPFLOW_API_SECRET }}'
+          helm upgrade --install --namespace="freshbooks-upflow" \
+          --debug --atomic --cleanup-on-fail --create-namespace ms-fb-integration ./helm/ms-fb-integration \
+          --set postgresql.auth.password='${{ secrets.PG_PASSWORD }}' \
+          --set secrets.freshbooksClientId='${{ secrets.FRESHBOOKS_CLIENT_ID }}' \
+          --set secrets.freshbooksClientSecret='${{ secrets.FRESHBOOKS_CLIENT_SECRET }}' \
+          --set secrets.upflowApiKey='${{ secrets.UPFLOW_API_KEY }}' \
+          --set secrets.upflowApiSecret='${{ secrets.UPFLOW_API_SECRET }}'
