@@ -18,6 +18,10 @@ import {
 } from './mappers';
 
 const CURSOR_KEY = 'invoices.updated_min';
+// Page checkpoints so a crashed/restarted backfill resumes mid-stream instead
+// of re-walking from page 1.
+const CLIENTS_PAGE_KEY = 'backfill.clients.page';
+const INVOICES_PAGE_KEY = 'backfill.invoices.page';
 
 export interface SyncCounts {
   ok: number;
@@ -67,19 +71,89 @@ export class SyncService {
     return pLimit(this.config.get('sync', { infer: true }).concurrency);
   }
 
-  /** Full import: every client, then every invoice. */
+  /**
+   * Full import, streamed page-by-page so memory stays bounded to one page
+   * regardless of total size. Resumable: already-synced rows are skipped and a
+   * page checkpoint lets a restart continue mid-stream. Safe to re-run.
+   */
   async backfill(): Promise<SyncResult> {
     this.logger.log('Backfill started.');
     const startedAt = new Date();
-    const clients = await this.fb.listClients();
-    const customers = await this.syncCustomers(clients);
-    const invoices = await this.fb.listInvoices();
-    const invoiceCounts = await this.syncInvoices(invoices);
+    const customers = await this.backfillCustomers();
+    const invoices = await this.backfillInvoices();
     await this.setCursor(startedAt);
     this.logger.log(
-      `Backfill done. customers ok=${customers.ok}/fail=${customers.failed}, invoices ok=${invoiceCounts.ok}/fail=${invoiceCounts.failed}`,
+      `Backfill done. customers ok=${customers.ok}/fail=${customers.failed}, invoices ok=${invoices.ok}/fail=${invoices.failed}`,
     );
-    return { customers, invoices: invoiceCounts };
+    return { customers, invoices };
+  }
+
+  private async backfillCustomers(): Promise<SyncCounts> {
+    const counts: SyncCounts = { ok: 0, failed: 0 };
+    const startPage = await this.getCheckpoint(CLIENTS_PAGE_KEY);
+    await this.fb.listClientsEach(
+      async (clients, page) => {
+        const active = clients.filter((c) => c.vis_state === 0);
+        const todo = await this.unsyncedClients(active);
+        const page1 = await this.syncCustomers(todo);
+        counts.ok += page1.ok;
+        counts.failed += page1.failed;
+        await this.setCheckpoint(CLIENTS_PAGE_KEY, page + 1);
+        this.logger.log(
+          `Customers page ${page}: ok=${counts.ok} failed=${counts.failed} skipped=${active.length - todo.length}.`,
+        );
+      },
+      { startPage },
+    );
+    await this.clearCheckpoint(CLIENTS_PAGE_KEY);
+    return counts;
+  }
+
+  private async backfillInvoices(): Promise<SyncCounts> {
+    const counts: SyncCounts = { ok: 0, failed: 0 };
+    const startPage = await this.getCheckpoint(INVOICES_PAGE_KEY);
+    await this.fb.listInvoicesEach(
+      async (invoices, page) => {
+        const active = invoices.filter((i) => i.vis_state === 0);
+        const todo = await this.unsyncedInvoices(active);
+        const page1 = await this.syncInvoices(todo);
+        counts.ok += page1.ok;
+        counts.failed += page1.failed;
+        await this.setCheckpoint(INVOICES_PAGE_KEY, page + 1);
+        this.logger.log(
+          `Invoices page ${page}: ok=${counts.ok} failed=${counts.failed} skipped=${active.length - todo.length}.`,
+        );
+      },
+      { startPage },
+    );
+    await this.clearCheckpoint(INVOICES_PAGE_KEY);
+    return counts;
+  }
+
+  /** Drop clients already synced ok (resume skips completed work). */
+  private async unsyncedClients(clients: FbClient[]): Promise<FbClient[]> {
+    if (!clients.length) return clients;
+    const ids = clients.map((c) => toExternalCustomerId(c.userid));
+    const done = await this.prisma.customerSync.findMany({
+      where: { fbClientId: { in: ids }, status: 'ok' },
+      select: { fbClientId: true },
+    });
+    const doneSet = new Set(done.map((d) => d.fbClientId));
+    return clients.filter((c) => !doneSet.has(toExternalCustomerId(c.userid)));
+  }
+
+  /** Drop invoices already synced ok (resume skips completed work). */
+  private async unsyncedInvoices(invoices: FbInvoice[]): Promise<FbInvoice[]> {
+    if (!invoices.length) return invoices;
+    const ids = invoices.map((i) => toExternalInvoiceId(i.invoiceid));
+    const done = await this.prisma.invoiceSync.findMany({
+      where: { fbInvoiceId: { in: ids }, status: 'ok' },
+      select: { fbInvoiceId: true },
+    });
+    const doneSet = new Set(done.map((d) => d.fbInvoiceId));
+    return invoices.filter(
+      (i) => !doneSet.has(toExternalInvoiceId(i.invoiceid)),
+    );
   }
 
   /** Incremental: upsert all clients, then invoices changed since the cursor. */
@@ -300,5 +374,28 @@ export class SyncService {
       create: { key: CURSOR_KEY, value },
       update: { value },
     });
+  }
+
+  /** Page checkpoint (stored in SyncCursor) → page number to resume from. */
+  private async getCheckpoint(key: string): Promise<number | undefined> {
+    const row = await this.prisma.syncCursor.findUnique({ where: { key } });
+    if (!row) return undefined;
+    const page = Number(row.value);
+    return Number.isFinite(page) && page > 0 ? page : undefined;
+  }
+
+  private async setCheckpoint(key: string, page: number): Promise<void> {
+    const value = String(page);
+    await this.prisma.syncCursor.upsert({
+      where: { key },
+      create: { key, value },
+      update: { value },
+    });
+  }
+
+  private async clearCheckpoint(key: string): Promise<void> {
+    await this.prisma.syncCursor
+      .delete({ where: { key } })
+      .catch(() => undefined);
   }
 }

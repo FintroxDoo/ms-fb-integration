@@ -1,0 +1,46 @@
+# One-off full backfill, run on the cluster (independent of your terminal).
+#   kubectl apply -f k8s/backfill-job.yaml
+#   kubectl logs -f job/ms-fb-integration-backfill
+#   kubectl delete -f k8s/backfill-job.yaml   # cleanup when done
+#
+# Reuses the SAME image + ConfigMap + Secret as the app, so it gets the staging
+# DB, UpFlow keys, and FreshBooks token (from the DB) automatically.
+# Confirm the names match your release:
+#   kubectl get configmap,secret | grep -E 'config|secret'
+#   kubectl get deploy -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ms-fb-integration-backfill
+spec:
+  # Backfill is resumable (skips already-synced rows + page checkpoint), so a
+  # crashed pod can safely auto-restart and continue where it left off.
+  backoffLimit: 3
+  activeDeadlineSeconds: 86400   # 24h ceiling for a very large (100k+) import
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: backfill
+          # Same image/tag as the running Deployment (see command above to read it).
+          image: REPLACE_WITH_IMAGE:TAG
+          command: ['node', 'dist/commands/backfill.js']
+          env:
+            # Backfill loads all clients + invoices into memory; keep V8 heap
+            # comfortably under the container memory limit below.
+            - name: NODE_OPTIONS
+              value: '--max-old-space-size=896'
+          envFrom:
+            - configMapRef:
+                name: ms-fb-integration-config
+            - secretRef:
+                name: ms-fb-integration-secret
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # Much higher than the app's 256Mi — backfill is memory-heavy.
+              cpu: 500m
+              memory: 1Gi

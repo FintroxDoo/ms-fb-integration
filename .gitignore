@@ -8,6 +8,7 @@ coverage/
 # env / secrets
 .env
 .env.local
+.env.staging
 
 # helm secret overrides (injected at deploy, never committed)
 values-secret.yaml

@@ -28,6 +28,8 @@ const envSchema = z.object({
   UPFLOW_API_KEY: z.string().min(1),
   UPFLOW_API_SECRET: z.string().min(1),
   UPFLOW_API_BASE: z.string().url().default('https://api.sandbox.upflow.io/v1'),
+  // Proactive write cap (UpFlow hard limit is 600/min). Default leaves headroom.
+  UPFLOW_MAX_PER_MINUTE: z.coerce.number().int().positive().default(540),
 
   SYNC_CRON_ENABLED: z
     .enum(['true', 'false'])
@@ -77,6 +79,7 @@ export interface AppConfig {
     apiKey: string;
     apiSecret: string;
     apiBase: string;
+    maxPerMinute: number;
   };
   sync: {
     cronEnabled: boolean;
@@ -135,6 +138,7 @@ export function configuration(): AppConfig {
       apiKey: env.UPFLOW_API_KEY,
       apiSecret: env.UPFLOW_API_SECRET,
       apiBase: env.UPFLOW_API_BASE,
+      maxPerMinute: env.UPFLOW_MAX_PER_MINUTE,
     },
     sync: {
       cronEnabled: env.SYNC_CRON_ENABLED,

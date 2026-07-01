@@ -38,18 +38,46 @@ export class FreshbooksApiService {
     };
   }
 
-  /** GET active clients, optionally filtered by email. Follows pagination. */
-  async listClients(opts: { email?: string } = {}): Promise<FbClient[]> {
+  private async clientsRequest(opts: { email?: string }): Promise<{
+    url: string;
+    params: Record<string, string>;
+    extract: (data: unknown) => { items: FbClient[]; pages: number };
+  }> {
     const accountId = await this.oauth.getAccountId();
     const url = `${this.apiBase}/accounting/account/${accountId}/users/clients`;
     const params: Record<string, string> = {};
     if (opts.email) {
       params['search[email]'] = opts.email;
     }
-    return this.paginate<FbClient>(url, params, (data) => {
-      const result = (data as FbClientsListResponse).response.result;
-      return { items: result.clients, pages: result.pages };
-    });
+    return {
+      url,
+      params,
+      extract: (data) => {
+        const result = (data as FbClientsListResponse).response.result;
+        return { items: result.clients, pages: result.pages };
+      },
+    };
+  }
+
+  /** GET active clients, optionally filtered by email. Follows pagination. */
+  async listClients(opts: { email?: string } = {}): Promise<FbClient[]> {
+    const { url, params, extract } = await this.clientsRequest(opts);
+    return this.paginate<FbClient>(url, params, extract);
+  }
+
+  /** Stream clients page-by-page (memory-bounded, resumable via startPage). */
+  async listClientsEach(
+    onPage: (clients: FbClient[], page: number) => Promise<void>,
+    opts: { email?: string; startPage?: number } = {},
+  ): Promise<void> {
+    const { url, params, extract } = await this.clientsRequest(opts);
+    await this.paginateEach<FbClient>(
+      url,
+      params,
+      extract,
+      onPage,
+      opts.startPage,
+    );
   }
 
   /**
@@ -59,6 +87,37 @@ export class FreshbooksApiService {
   async listInvoices(
     opts: { updatedMin?: string; customerId?: number | string } = {},
   ): Promise<FbInvoice[]> {
+    const { url, params, extract } = await this.invoicesRequest(opts);
+    return this.paginate<FbInvoice>(url, params, extract);
+  }
+
+  /** Stream invoices page-by-page (memory-bounded, resumable via startPage). */
+  async listInvoicesEach(
+    onPage: (invoices: FbInvoice[], page: number) => Promise<void>,
+    opts: {
+      updatedMin?: string;
+      customerId?: number | string;
+      startPage?: number;
+    } = {},
+  ): Promise<void> {
+    const { url, params, extract } = await this.invoicesRequest(opts);
+    await this.paginateEach<FbInvoice>(
+      url,
+      params,
+      extract,
+      onPage,
+      opts.startPage,
+    );
+  }
+
+  private async invoicesRequest(opts: {
+    updatedMin?: string;
+    customerId?: number | string;
+  }): Promise<{
+    url: string;
+    params: Record<string, string>;
+    extract: (data: unknown) => { items: FbInvoice[]; pages: number };
+  }> {
     const accountId = await this.oauth.getAccountId();
     const url = `${this.apiBase}/accounting/account/${accountId}/invoices/invoices`;
     const params: Record<string, string> = { 'include[]': 'lines' };
@@ -68,10 +127,14 @@ export class FreshbooksApiService {
     if (opts.customerId !== undefined) {
       params['search[customerid]'] = String(opts.customerId);
     }
-    return this.paginate<FbInvoice>(url, params, (data) => {
-      const result = (data as FbInvoicesListResponse).response.result;
-      return { items: result.invoices, pages: result.pages };
-    });
+    return {
+      url,
+      params,
+      extract: (data) => {
+        const result = (data as FbInvoicesListResponse).response.result;
+        return { items: result.invoices, pages: result.pages };
+      },
+    };
   }
 
   /** GET a single client by id. */
@@ -105,14 +168,21 @@ export class FreshbooksApiService {
     return data.response.result.invoice;
   }
 
-  private async paginate<T>(
+  /**
+   * Stream pages: fetch one page at a time and hand it to `onPage`, never
+   * accumulating the whole result set. Memory stays bounded to a single page
+   * (PER_PAGE items) regardless of total size — required for large backfills.
+   * `startPage` lets a resumed run skip pages already processed.
+   */
+  private async paginateEach<T>(
     url: string,
     baseParams: Record<string, string>,
     extract: (data: unknown) => { items: T[]; pages: number },
-  ): Promise<T[]> {
-    const all: T[] = [];
-    let page = 1;
-    let totalPages = 1;
+    onPage: (items: T[], page: number) => Promise<void>,
+    startPage = 1,
+  ): Promise<void> {
+    let page = Math.max(1, startPage);
+    let totalPages = page;
     do {
       const headers = await this.authHeaders();
       const params = {
@@ -125,10 +195,22 @@ export class FreshbooksApiService {
         { label: `fb GET ${url} p${page}` },
       );
       const { items, pages } = extract(data);
-      all.push(...items);
       totalPages = pages;
+      if (items.length) await onPage(items, page);
       page += 1;
     } while (page <= totalPages);
+  }
+
+  /** Collect every page into one array (small/bounded result sets only). */
+  private async paginate<T>(
+    url: string,
+    baseParams: Record<string, string>,
+    extract: (data: unknown) => { items: T[]; pages: number },
+  ): Promise<T[]> {
+    const all: T[] = [];
+    await this.paginateEach<T>(url, baseParams, extract, async (items) => {
+      all.push(...items);
+    });
     this.logger.log(`Fetched ${all.length} item(s) from ${url}`);
     return all;
   }

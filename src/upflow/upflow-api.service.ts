@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { AppConfig } from '../config/configuration';
+import { RateLimiter } from '../common/rate-limiter';
 import { withRetry } from '../common/retry';
 import {
   UpflowCustomerInput,
@@ -13,11 +14,18 @@ import {
 @Injectable()
 export class UpflowApiService {
   private readonly logger = new Logger(UpflowApiService.name);
+  // Shared across all calls (singleton service) so the cap is global, not
+  // per-request. Acquired inside each retry attempt so retries are paced too.
+  private readonly rate: RateLimiter;
 
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService<AppConfig, true>,
-  ) {}
+  ) {
+    this.rate = new RateLimiter(
+      this.config.get('upflow', { infer: true }).maxPerMinute,
+    );
+  }
 
   private get upflow() {
     return this.config.get('upflow', { infer: true });
@@ -37,14 +45,16 @@ export class UpflowApiService {
     input: UpflowCustomerInput,
   ): Promise<UpflowEntityResponse> {
     const { data } = await withRetry(
-      () =>
-        firstValueFrom(
+      async () => {
+        await this.rate.acquire();
+        return firstValueFrom(
           this.http.post<UpflowEntityResponse>(
             `${this.upflow.apiBase}/customers`,
             input,
             { headers: this.headers() },
           ),
-        ),
+        );
+      },
       { label: `upflow upsertCustomer ${input.externalId ?? input.name}` },
     );
     this.logger.debug(
@@ -58,14 +68,16 @@ export class UpflowApiService {
     input: UpflowInvoiceInput,
   ): Promise<UpflowEntityResponse> {
     const { data } = await withRetry(
-      () =>
-        firstValueFrom(
+      async () => {
+        await this.rate.acquire();
+        return firstValueFrom(
           this.http.post<UpflowEntityResponse>(
             `${this.upflow.apiBase}/invoices`,
             input,
             { headers: this.headers() },
           ),
-        ),
+        );
+      },
       { label: `upflow upsertInvoice ${input.externalId ?? input.customId}` },
     );
     this.logger.debug(
@@ -77,13 +89,15 @@ export class UpflowApiService {
   /** Delete an invoice by its external id (FreshBooks-derived). */
   async deleteInvoice(externalId: string): Promise<void> {
     await withRetry(
-      () =>
-        firstValueFrom(
+      async () => {
+        await this.rate.acquire();
+        return firstValueFrom(
           this.http.delete(
             `${this.upflow.apiBase}/invoices/external:${externalId}`,
             { headers: this.headers() },
           ),
-        ),
+        );
+      },
       { label: `upflow deleteInvoice ${externalId}` },
     );
     this.logger.debug(`Deleted invoice externalId=${externalId}`);
@@ -92,13 +106,15 @@ export class UpflowApiService {
   /** Delete a customer by its external id (FreshBooks-derived). */
   async deleteCustomer(externalId: string): Promise<void> {
     await withRetry(
-      () =>
-        firstValueFrom(
+      async () => {
+        await this.rate.acquire();
+        return firstValueFrom(
           this.http.delete(
             `${this.upflow.apiBase}/customers/external:${externalId}`,
             { headers: this.headers() },
           ),
-        ),
+        );
+      },
       { label: `upflow deleteCustomer ${externalId}` },
     );
     this.logger.debug(`Deleted customer externalId=${externalId}`);
